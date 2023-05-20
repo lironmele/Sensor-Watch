@@ -28,10 +28,9 @@
 #include "movement.h"
 
 /*
- * A DESCRIPTION OF YOUR WATCH FACE
- *
- * and a description of how use it
- *
+ * A normal clock that displays day/hour/minute/second in
+ * hexadecimal representation.
+ * 
  */
 
 typedef struct {
