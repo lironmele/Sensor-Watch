@@ -29,33 +29,60 @@
 
 char map[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'b', 'C', 'd', 'E', 'F'};
 
+static void _update_alarm_indicator(bool settings_alarm_enabled, hex_state_t *state) {
+    state->alarm_enabled = settings_alarm_enabled;
+    if (state->alarm_enabled) watch_set_indicator(WATCH_INDICATOR_SIGNAL);
+    else watch_clear_indicator(WATCH_INDICATOR_SIGNAL);
+}
+
 void hex_face_setup(movement_settings_t *settings, uint8_t watch_face_index, void ** context_ptr) {
     (void) settings;
+    (void) watch_face_index;
+
     if (*context_ptr == NULL) {
         *context_ptr = malloc(sizeof(hex_state_t));
-        memset(*context_ptr, 0, sizeof(hex_state_t));
-        // Do any one-time tasks in here; the inside of this conditional happens only at boot.
+        hex_state_t *state = (hex_state_t *)*context_ptr;
+        state->signal_enabled = false;
+        state->watch_face_index = watch_face_index;
     }
-    // Do any pin or peripheral setup here; this will be called whenever the watch wakes from deep sleep.
 }
 
 void hex_face_activate(movement_settings_t *settings, void *context) {
-    (void) settings;
+    hex_state_t *state = (hex_state_t *)context;
 
-    // Handle any tasks related to your watch face coming on screen.
+    if (watch_tick_animation_is_running()) watch_stop_tick_animation();
+
+    if (settings->bit.clock_mode_24h) watch_set_indicator(WATCH_INDICATOR_24H);
+
+    // handle chime indicator
+    if (state->signal_enabled) watch_set_indicator(WATCH_INDICATOR_BELL);
+    else watch_clear_indicator(WATCH_INDICATOR_BELL);
+
+    // show alarm indicator if there is an active alarm
+    _update_alarm_indicator(settings->bit.alarm_enabled, state);
+
+    watch_set_colon();
+
+    // this ensures that none of the timestamp fields will match, so we can re-render them all.
+    state->previous_date_time = 0xFFFFFFFF;
 }
 
 bool hex_face_loop(movement_event_t event, movement_settings_t *settings, void *context) {
+    hex_state_t *state = (hex_state_t *)context;
     char buf[11];
     uint8_t pos;
     uint32_t index;
 
     watch_date_time date_time;
+    uint32_t previous_date_time;
+    (void) previous_date_time;
     switch (event.event_type) {
         case EVENT_ACTIVATE:
         case EVENT_TICK:
         case EVENT_LOW_ENERGY_UPDATE:
             date_time = watch_rtc_get_date_time();
+            previous_date_time = state->previous_date_time;
+            state->previous_date_time = date_time.reg;
             
             pos = 0;
             sprintf(buf, "%s", watch_utility_get_weekday(date_time));
@@ -74,6 +101,28 @@ bool hex_face_loop(movement_event_t event, movement_settings_t *settings, void *
             buf[index++] = map[date_time.unit.second % 0x10];
 
             watch_display_string(buf, pos);
+            // handle alarm indicator
+            if (state->alarm_enabled != settings->bit.alarm_enabled) _update_alarm_indicator(settings->bit.alarm_enabled, state);
+            break;
+        case EVENT_ALARM_LONG_PRESS:
+            state->signal_enabled = !state->signal_enabled;
+            if (state->signal_enabled) watch_set_indicator(WATCH_INDICATOR_BELL);
+            else watch_clear_indicator(WATCH_INDICATOR_BELL);
+            break;
+        case EVENT_BACKGROUND_TASK:
+            // uncomment this line to snap back to the clock face when the hour signal sounds:
+            // movement_move_to_face(state->watch_face_index);
+            if (watch_is_buzzer_or_led_enabled()) {
+                // if we are in the foreground, we can just beep.
+                movement_play_signal();
+            } else {
+                // if we were in the background, we need to enable the buzzer peripheral first,
+                watch_enable_buzzer();
+                // beep quickly (this call blocks for 275 ms),
+                movement_play_signal();
+                // and then turn the buzzer peripheral off again.
+                watch_disable_buzzer();
+            }
             break;
         default:
             return movement_default_loop_handler(event, settings);
@@ -87,3 +136,12 @@ void hex_face_resign(movement_settings_t *settings, void *context) {
     (void) context;
 }
 
+bool hex_face_wants_background_task(movement_settings_t *settings, void *context) {
+    (void) settings;
+    hex_state_t *state = (hex_state_t *)context;
+    if (!state->signal_enabled) return false;
+
+    watch_date_time date_time = watch_rtc_get_date_time();
+
+    return date_time.unit.minute == 0;
+}

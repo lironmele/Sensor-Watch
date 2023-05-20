@@ -35,21 +35,26 @@
  */
 
 typedef struct {
-    // Anything you need to keep track of, put it here!
-    uint8_t unused;
+    uint32_t previous_date_time;
+    uint8_t last_battery_check;
+    uint8_t watch_face_index;
+    bool signal_enabled;
+    bool battery_low;
+    bool alarm_enabled;
 } hex_state_t;
 
 void hex_face_setup(movement_settings_t *settings, uint8_t watch_face_index, void ** context_ptr);
 void hex_face_activate(movement_settings_t *settings, void *context);
 bool hex_face_loop(movement_event_t event, movement_settings_t *settings, void *context);
 void hex_face_resign(movement_settings_t *settings, void *context);
+bool hex_face_wants_background_task(movement_settings_t *settings, void *context);
 
 #define hex_face ((const watch_face_t){ \
     hex_face_setup, \
     hex_face_activate, \
     hex_face_loop, \
     hex_face_resign, \
-    NULL, \
+    hex_face_wants_background_task, \
 })
 
 #endif // HEX_FACE_H_
