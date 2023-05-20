@@ -26,6 +26,7 @@
 #include <string.h>
 #include "hex_face.h"
 #include "watch_utility.h"
+#include "watch_private_display.h"
 
 char map[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'b', 'C', 'd', 'E', 'F'};
 
@@ -71,7 +72,6 @@ bool hex_face_loop(movement_event_t event, movement_settings_t *settings, void *
     hex_state_t *state = (hex_state_t *)context;
     char buf[11];
     uint8_t pos;
-    uint32_t index;
 
     watch_date_time date_time;
     uint32_t previous_date_time;
@@ -84,22 +84,73 @@ bool hex_face_loop(movement_event_t event, movement_settings_t *settings, void *
             previous_date_time = state->previous_date_time;
             state->previous_date_time = date_time.reg;
             
-            pos = 0;
-            sprintf(buf, "%s", watch_utility_get_weekday(date_time));
-            
-            index = 2;
-            buf[index++] = map[date_time.unit.day / 0x10];
-            buf[index++] = map[date_time.unit.day % 0x10];
-            
-            buf[index++] = map[date_time.unit.hour / 0x10];
-            buf[index++] = map[date_time.unit.hour % 0x10];
-            
-            buf[index++] = map[date_time.unit.minute / 0x10];
-            buf[index++] = map[date_time.unit.minute % 0x10];
-            
-            buf[index++] = map[date_time.unit.second / 0x10];
-            buf[index++] = map[date_time.unit.second % 0x10];
+            // check the battery voltage once a day...
+            if (date_time.unit.day != state->last_battery_check) {
+                state->last_battery_check = date_time.unit.day;
+                watch_enable_adc();
+                uint16_t voltage = watch_get_vcc_voltage();
+                watch_disable_adc();
+                // 2.2 volts will happen when the battery has maybe 5-10% remaining?
+                // we can refine this later.
+                state->battery_low = (voltage < 2200);
+            }
 
+            // ...and set the LAP indicator if low.
+            if (state->battery_low) watch_set_indicator(WATCH_INDICATOR_LAP);
+
+            if ((date_time.reg >> 6) == (previous_date_time >> 6) && event.event_type != EVENT_LOW_ENERGY_UPDATE) {
+                // everything before seconds is the same, don't waste cycles setting those segments.
+                watch_display_character_lp_seconds(*(map + date_time.unit.second / 0x10), 8);
+                watch_display_character_lp_seconds(*(map + date_time.unit.second % 0x10), 9);
+                break;
+            } else if ((date_time.reg >> 12) == (previous_date_time >> 12) && event.event_type != EVENT_LOW_ENERGY_UPDATE) {
+                // everything before minutes is the same.
+                pos = 6;
+                sprintf(buf, "%c%c%c%c", map[date_time.unit.minute / 0x10], map[date_time.unit.minute % 0x10], map[date_time.unit.second / 0x10], map[date_time.unit.second % 0x10]);
+            } else {
+                // other stuff changed; let's do it all.
+                if (!settings->bit.clock_mode_24h) {
+                    // if we are in 12 hour mode, do some cleanup.
+                    if (date_time.unit.hour < 12) {
+                        watch_clear_indicator(WATCH_INDICATOR_PM);
+                    } else {
+                        watch_set_indicator(WATCH_INDICATOR_PM);
+                    }
+                    date_time.unit.hour %= 12;
+                    if (date_time.unit.hour == 0) date_time.unit.hour = 12;
+                }
+                pos = 0;
+                if (event.event_type == EVENT_LOW_ENERGY_UPDATE) {
+                    if (!watch_tick_animation_is_running()) watch_start_tick_animation(500);
+                    sprintf(buf, "%s", watch_utility_get_weekday(date_time));
+                    
+                    buf[2] = map[date_time.unit.day / 0x10];
+                    buf[3] = map[date_time.unit.day % 0x10];
+
+                    buf[4] = map[date_time.unit.hour / 0x10];
+                    buf[5] = map[date_time.unit.hour % 0x10];
+                    
+                    buf[6] = map[date_time.unit.minute / 0x10];
+                    buf[7] = map[date_time.unit.minute % 0x10];
+
+                    buf[8] = ' ';
+                    buf[9] = ' ';
+                } else {
+                    sprintf(buf, "%s", watch_utility_get_weekday(date_time));
+                    
+                    buf[2] = map[date_time.unit.day / 0x10];
+                    buf[3] = map[date_time.unit.day % 0x10];
+
+                    buf[4] = map[date_time.unit.hour / 0x10];
+                    buf[5] = map[date_time.unit.hour % 0x10];
+                    
+                    buf[6] = map[date_time.unit.minute / 0x10];
+                    buf[7] = map[date_time.unit.minute % 0x10];
+
+                    buf[8] = map[date_time.unit.second / 0x10];
+                    buf[9] = map[date_time.unit.second % 0x10];
+                }
+            }
             watch_display_string(buf, pos);
             // handle alarm indicator
             if (state->alarm_enabled != settings->bit.alarm_enabled) _update_alarm_indicator(settings->bit.alarm_enabled, state);
