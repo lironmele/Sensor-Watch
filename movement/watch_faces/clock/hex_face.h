@@ -1,7 +1,7 @@
 /*
  * MIT License
  *
- * Copyright (c) 2022 Joey Castillo
+ * Copyright (c) 2023 Liron Meler
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -22,25 +22,35 @@
  * SOFTWARE.
  */
 
-#ifndef MOVEMENT_CONFIG_H_
-#define MOVEMENT_CONFIG_H_
+#ifndef HEX_FACE_H_
+#define HEX_FACE_H_
 
-#include "movement_faces.h"
+#include "movement.h"
 
-const watch_face_t watch_faces[] = {
-    hex_face,
-    simple_clock_face,
-    preferences_face,
-    set_time_face,
-};
-
-#define MOVEMENT_NUM_FACES (sizeof(watch_faces) / sizeof(watch_face_t))
-
-/* Determines what face to go to from the first face if you've already set 
- * a mode long press to go to the first face in preferences, and
- * excludes these faces from the normal rotation.
- * Usually it makes sense to set this to the preferences face.
+/*
+ * A DESCRIPTION OF YOUR WATCH FACE
+ *
+ * and a description of how use it
+ *
  */
-#define MOVEMENT_SECONDARY_FACE_INDEX 0 // or (MOVEMENT_NUM_FACES - 2)
 
-#endif // MOVEMENT_CONFIG_H_
+typedef struct {
+    // Anything you need to keep track of, put it here!
+    uint8_t unused;
+} hex_state_t;
+
+void hex_face_setup(movement_settings_t *settings, uint8_t watch_face_index, void ** context_ptr);
+void hex_face_activate(movement_settings_t *settings, void *context);
+bool hex_face_loop(movement_event_t event, movement_settings_t *settings, void *context);
+void hex_face_resign(movement_settings_t *settings, void *context);
+
+#define hex_face ((const watch_face_t){ \
+    hex_face_setup, \
+    hex_face_activate, \
+    hex_face_loop, \
+    hex_face_resign, \
+    NULL, \
+})
+
+#endif // HEX_FACE_H_
+
